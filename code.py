@@ -105,23 +105,26 @@ if __name__ == "__main__":
     decompose_data = seasonal_decompose(df_weekly1.iloc[:,0],period=4, model="additive")
     decompose_data.plot();
     
-    
+    df_weekly1 = np.log(df_weekly1)
+    df_weekly1 =df_weekly1[~df_weekly1.isin([np.nan, np.inf, -np.inf]).any(1)]
     ###########################################################################################
 
 
     def my_train_sarimax(df_var):
-        mod = sm.tsa.statespace.SARIMAX(df_weekly1.iloc[:,0],order =(1,0,1),seasonal_order = (1,0,1,4))
-        # mod = sm.tsa.statespace.SARIMAX(
-        #                                 df_var.iloc[:,0], # Variable to be predicted
-        #                                 order= config['order'],
-        #                                 freq= config['freq'] ,
-        #                                 exog = df_var.iloc[:,1:] # exogenous variables
-        #                                 ,seasonal_order=config['seasonal_order'],
-        #                                 enforce_stationarity=config['enforce_stationarity'],
-        #                                 enforce_invertibility=config['enforce_invertibility']
-        #                                )
+        #mod = sm.tsa.statespace.SARIMAX(df_weekly1.iloc[:,0],order =(1,0,1),seasonal_order = (1,0,1,4))
+        mod = sm.tsa.statespace.SARIMAX(
+                                        df_var.iloc[:,0], # Variable to be predicted
+                                        order= (0, 2, 1), #config['order'],
+                                        freq= config['freq'] ,
+                                        exog = df_var.iloc[:,1:] # exogenous variables
+                                        ,seasonal_order= (0, 2, 1, 12), #config['seasonal_order'],
+                                        enforce_stationarity=config['enforce_stationarity'],
+                                        enforce_invertibility=config['enforce_invertibility']
+                                        )
 
-        results = mod.fit()
+        results = mod.fit(method='powell') #cg,basinhopping,powell,bfgs,nm-1000
+        
+        
         
         if config['print_summary']:
             print(results.summary().tables[1])
@@ -180,7 +183,7 @@ if __name__ == "__main__":
                                                     enforce_stationarity=config['enforce_stationarity'],
                                                     enforce_invertibility=config['enforce_invertibility']
                                                     )
-                    results = mod.fit()
+                    results = mod.fit(method='basinhopping')
                     if verbose:
                         print('ARIMA{}x{}12 - AIC:{}'.format(param, param_seasonal, results.aic))
                         
@@ -193,15 +196,33 @@ if __name__ == "__main__":
                     continue
         print('Min_AIC')
         print(opt_params)
-
-
+        #nm - {'order': (0, 2, 1), 'seasonal_order': (0, 2, 1, 12)} aic = 8.0 
+        #cg - {'order': (2, 2, 0), 'seasonal_order': (2, 2, 0, 12)} aic = 355.91792954348546
+        #powell - {'order': (0, 2, 1), 'seasonal_order': (0, 2, 1, 12)} = 8.0
+        #basinhopping -
+        
+        
     find_optimal_params(df_weekly1)
     result = my_train_sarimax(df_weekly1)
-
+    result.aic
     ytruth,ypred = compare_pred_vs_real(result, df_weekly1, config['predict_from_date'], exog_validation=df_weekly1['2017-01-23':].iloc[:,1:])
+    
+    # cg
+    # The Mean Squared Error of our forecasts is 6097.54
+    # The Root Mean Squared Error of our forecasts is 78.09
+    
+    #nm - too high
+    # The Mean Squared Error of our forecasts is 2.79501653708178e+25
+    # The Root Mean Squared Error of our forecasts is 5286791595175.45
+    
+    #powell - too high
+    #The Mean Squared Error of our forecasts is 1.3117726142102332e+30
+    #The Root Mean Squared Error of our forecasts is 1145326422558317.2
+    
     #ypred.astype(np.int64) - ytruth.astype(np.int64)
     print(ypred - ytruth)
-
+    
+    ypred = np.exp(ypred)
     p = df_weekly1['Avg_Price'].tolist()
     ypreddf = pd.DataFrame({'Pred':ypred,'P':p})
     ypreddf = scaler.inverse_transform(ypreddf)
